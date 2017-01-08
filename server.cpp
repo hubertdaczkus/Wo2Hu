@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <string.h>
 //#include <signal.h>
@@ -21,16 +22,77 @@
 
 using namespace std;
 
+class User {
+    public:
+    string token;
+    string id;
+    string nickname;
+    string pass;
+    void addUser(string, string, string);
+};
+
+void User::addUser(string userId, string name, string pw) {
+    id = userId;
+    nickname = name;
+    pass = pw;
+}
+
+class Connection {
+    public:
+    string message[100];
+    int splitMessage(string);
+};
+
+int Connection::splitMessage(string str) {
+    string tmp;
+    int count = 0;
+    for (int i = 0; i < str.length(); i++) {
+        string curr;
+        curr = str[i];
+        if (strcmp(curr.c_str(), ";") != 0) {
+            tmp += str[i];
+        }
+        else {
+            message[count] = tmp;
+            tmp = "";
+            count++;
+        }
+    }
+    return count;
+}
+
+string sendToken(string str) {
+    istringstream stream(str);
+    str += "00";
+    str += "004";
+    for (int i = 0; i < 4; i++){
+        //str += ";" + list[i].nickname;
+    }
+    return str;
+}
+
+string sendUsers(User list[]) {
+    string str;
+    str += "00;";
+    str += "004;";
+    for (int i = 0; i < 4; i++){
+        str += list[i].nickname + ";";
+    }
+    return str;
+}
+
 int main(int argc, char** argv) {
     char buf[BUFROZ];
-	//string lista[6];
-    char *lista[6];
-	lista[0] = "71764";
-	lista[1] = "Hubert Daczkus";
-	lista[2] = "88686";
-    lista[3] = "Lukasz Dur";
-	lista[4] = "70178";
-	lista[5] = "Michal Woch"; 
+    User users[4];
+    users[0].addUser("0001", "admin", "1234");
+    users[1].addUser("0002", "admin2", "1234");
+    users[2].addUser("0003", "admin3", "1234");
+    users[3].addUser("0004", "admin4", "1234");
+    cout << sendUsers(users) << endl;
+    Connection conn;
+    for (int i = 0; i < conn.splitMessage(sendUsers(users)); i++){
+        cout << conn.message[i] << endl;
+    }
     
     socklen_t slt;
     int x, sfd, cfd, fdmax, fda, rc, i, j, on = 1;
@@ -81,11 +143,11 @@ int main(int argc, char** argv) {
                 fda -= 1;
                 j = read(cfd, buf, BUFROZ);
                 x = 0;
-                for (j = 0; j < 6; j++) {
-                    if (strcmp(buf, lista[j]) == 0) {
-                        write(cfd, lista[j+1], 20);
+                for (j = 0; j < 4; j++) {
+                    //if (strcmp(buf, lista[j].c_str()) == 0) {
+                        //write(cfd, lista[j+1].c_str(), lista[j+1].length());
                         x = 1;			
-                    }
+                    //}
                 }	
                 if (x == 0) {	
                     write(cfd, "Brak indexu w bazie", 20);
