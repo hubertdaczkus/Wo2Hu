@@ -3,13 +3,15 @@
 //#include <netinet/in.h>
 #include <arpa/inet.h>
 //#include <netdb.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 #include <unistd.h>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <cerrno>
 #include <string.h>
+#include <vector>
 //#include <signal.h>
 //#include <sys/wait.h>
 //#include <pthread.h>
@@ -24,23 +26,27 @@ using namespace std;
 
 class User {
     public:
+    string status;
     string token;
-    string id;
     string nickname;
     string pass;
-    void addUser(string, string, string);
+    User(string, string, string);
 };
 
-void User::addUser(string userId, string name, string pw) {
-    id = userId;
+User::User(string name, string pw, string stat) {
+    status = stat;
+    token = "";
     nickname = name;
     pass = pw;
 }
 
 class Connection {
     public:
-    string message[100];
+    User* user;
+    string message;
+    string splittedMessage[100];
     int splitMessage(string);
+    void setup(string, User);
 };
 
 int Connection::splitMessage(string str) {
@@ -53,7 +59,7 @@ int Connection::splitMessage(string str) {
             tmp += str[i];
         }
         else {
-            message[count] = tmp;
+            splittedMessage[count] = tmp;
             tmp = "";
             count++;
         }
@@ -61,39 +67,63 @@ int Connection::splitMessage(string str) {
     return count;
 }
 
-string sendToken(string str) {
-    istringstream stream(str);
-    str += "00";
-    str += "004";
-    for (int i = 0; i < 4; i++){
-        //str += ";" + list[i].nickname;
-    }
+void Connection::setup(string msg, User usr) {
+    message = msg;
+    user = &usr;
+}
+
+string getFile(const char *filename)
+{
+  FILE *fp = fopen(filename, "rb");
+  if (fp)
+  {
+    string contents;
+    fseek(fp, 0, SEEK_END);
+    contents.resize(ftell(fp));
+    rewind(fp);
+    fread(&contents[0], 1, contents.size(), fp);
+    fclose(fp);
+    return(contents);
+  }
+  throw(errno);
+}
+
+string sendMessage(User usr) {
+    string str;
+    string path = "MESSAGES/" + usr.nickname;
+    str = getFile(path.c_str());
+    cout << str << endl;
     return str;
 }
 
-string sendUsers(User list[]) {
+string sendUsers(vector<User>& list) {
     string str;
+    stringstream ss;
+    ss << list.size();
     str += "00;";
-    str += "004;";
-    for (int i = 0; i < 4; i++){
-        str += list[i].nickname + ";";
+    str += (ss.str() + ";");
+    for (int i = 0; i < list.size(); i++){
+        str += list[i].nickname + ";" + list[i].status + ";";
     }
     return str;
 }
 
 int main(int argc, char** argv) {
     char buf[BUFROZ];
-    User users[4];
-    users[0].addUser("0001", "admin", "1234");
-    users[1].addUser("0002", "admin2", "1234");
-    users[2].addUser("0003", "admin3", "1234");
-    users[3].addUser("0004", "admin4", "1234");
-    cout << sendUsers(users) << endl;
+    vector<User> users;
+    User usr = User("admin", "1234", "0");
+
+    users.push_back(User("admin", "1234", "0"));
+    users.push_back(User("admin2", "1234", "0"));
+    users.push_back(User("admin3", "1234", "0"));
+    users.push_back(User("admin4", "1234", "0"));
     Connection conn;
     for (int i = 0; i < conn.splitMessage(sendUsers(users)); i++){
-        cout << conn.message[i] << endl;
+       cout << conn.splittedMessage[i] << endl;
     }
-    
+    cout << sendUsers(users) << endl;
+    sendMessage(usr);
+
     socklen_t slt;
     int x, sfd, cfd, fdmax, fda, rc, i, j, on = 1;
     struct sockaddr_in saddr, caddr;
