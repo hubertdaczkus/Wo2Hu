@@ -24,7 +24,7 @@ int main(int argc, char *argv[]) {
 	addr.sin_port = htons(atoi(argv[2]));
 	connect(fd, (struct sockaddr*) &addr, sizeof(addr));
 	char buf[BUFROZ];
-    char* message = "71764";
+    char* message = "00;admin3;1234";
     write(fd, message, BUFROZ);
     int i = read(fd, buf, BUFROZ);
 	buf[i] = '\0';
