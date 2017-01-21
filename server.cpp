@@ -36,7 +36,7 @@ void sendToFile(string, string, string);
 string generateToken(int);
 User* login(vector<User>&, string, string);
 const string currentDateTime();
-string sendMessage(User);
+string prepareMessage(User, string);
 int saveMessage(string, string, string);
 string sendUsers(vector<User>&);
 User* findToken(vector<User>&, string);
@@ -177,9 +177,9 @@ const string currentDateTime()
     return buf;
 }
 
-string prepareMessage(User usr) {
+string prepareMessage(User usr, string fromUsr) {
     string msg;
-    string path = "./MESSAGES/" + usr.nickname;
+    string path = "./MESSAGES/" + usr.nickname + "/" + fromUsr;
     msg = getFile(path.c_str());
     cout << msg << endl;
     return msg;
@@ -252,12 +252,12 @@ void listFile(){
                 closedir(pDIR);
         }
 }
-void writeMessage(int desc, int& msgSize, int& msgType, string msg){
-    write(desc, (void*)msgSize, sizeof(msgSize));
+void writeMessage(int desc, int msgSize, int msgType, string msg){
+    write(desc, (void*)& msgSize, sizeof(msgSize));
     cout << "SERVER: messageSize write: " << msgSize << endl;
-    write(desc, (void*)msgType, sizeof(msgType));
+    write(desc, (void*)& msgType, sizeof(msgType));
     cout << "SERVER: messageType write: " << msgType << endl;
-    write(desc, msg.c_str(), msg.length());
+    write(desc, msg.c_str(), msgSize);
     cout << "SERVER: message write: " << msg << endl;
 }
 
@@ -341,7 +341,7 @@ int main(int argc, char** argv) {
                 cout << "SERVER: message read: " << recMsg << endl;
                 Connection conn;
                 conn.splitMessage(recMsg);
-                if ( messageType == 0) { //LOGIN 00;login;hasło;
+                if ( messageType == 0) { //LOGIN login;hasło;
                     cout << "SERVER: Choose type 0" << endl;
                     conn.user = login(users, conn.splittedMessage[0], conn.splittedMessage[1]);
                     sendMsg = "";
@@ -361,7 +361,7 @@ int main(int argc, char** argv) {
                     printUsers(users);
 
                 }
-                else if (messageType == 1) { //SEND USERS 01;token; 
+                else if (messageType == 1) { //SEND USERS token; 
                     cout << "SERVER: Choose type 1" << endl;
                     if (findToken(users, recMsg)) {
                         conn.user = findToken(users, recMsg);
@@ -384,13 +384,14 @@ int main(int argc, char** argv) {
                 }
                 
                 
-                else if (messageType == 2) { //SEND MESSAGE 02;token; 
+                else if (messageType == 2) { //SEND MESSAGE token;fromUsr; 
                     cout << "SERVER: Choose type 2" << endl;
-                    if (findToken(users, recMsg)) {
-                        conn.user = findToken(users, recMsg);
+                    if (findToken(users, conn.splittedMessage[0])) {
+                        conn.user = findToken(users, conn.splittedMessage[0]);
+                        cout << conn.splittedMessage[0] << "  ####   " << conn.splittedMessage[1] << endl;
                         cout << "Auth Login: " << conn.user->nickname << " Token: " << conn.user->token << endl;
                         if (conn.user) {
-                            sendMsg = prepareMessage(*conn.user);
+                            sendMsg = prepareMessage(*conn.user, conn.splittedMessage[1]);
                             messageSize = sendMsg.length();
                             writeMessage(cfd, messageSize, messageType, sendMsg);
                             conn.user->status = "1";
@@ -399,14 +400,15 @@ int main(int argc, char** argv) {
                         }
                     }
                     else {
-                        messageType = 5;
+                        messageType = 15;
+                        cout << conn.splittedMessage[0] << "  ####   " << conn.splittedMessage[1] << endl;
                         sendMsg = "Token nierozpoznany";
                         messageSize = sendMsg.length();
                         writeMessage(cfd, messageSize, messageType, sendMsg);
                     }
                     printUsers(users);
                 }
-                else if (messageType == 3) { //GET MESSAGE 03;token;messageSize;message; 
+                else if (messageType == 3) { //GET MESSAGE token;toUsr;message 
                     cout << "SERVER: Choose type 3" << endl;
                     if (findToken(users, conn.splittedMessage[0])) {
                         conn.user = findToken(users, conn.splittedMessage[0]);
