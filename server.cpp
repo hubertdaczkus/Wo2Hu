@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <unistd.h>
+#include <cstddef>
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -14,22 +15,37 @@
 #include <cerrno>
 #include <string.h>
 #include <vector>
+#include <dirent.h>
+//#include <boost/filesystem.hpp>
 //#include <signal.h>
 //#include <sys/wait.h>
 //#include <pthread.h>
 //#include <sys/select.h>
 
-#define BUFROZ 2
+#define BUFROZ 200000
 #define ERROR(e) { perror(e); exit(EXIT_FAILURE); }
 #define SERVER_PORT 1234
 #define QUEUE_SIZE 5
 
 using namespace std;
 
+class User;
+void printUsers(vector<User>&);
+string getFile(const char);
+void sendToFile(string, string, string);
+string generateToken(int);
+User* login(vector<User>&, string, string);
+const string currentDateTime();
+string sendMessage(User);
+int saveMessage(string, string, string);
+string sendUsers(vector<User>&);
+User* findToken(vector<User>&, string);
+bool findUser(vector<User>&, string);
+
 class User {
     public:
     string status;
-    string lastSeen;
+    int lastSeen;
     string token;
     string nickname;
     string password;
@@ -38,10 +54,9 @@ class User {
 
 User::User(string name, string pw, string stat) {
     status = stat;
-    token = "";
+    token = generateToken(2);
     nickname = name;
     password = pw;
-    token = "";
 }
 
 class Connection {
@@ -52,7 +67,8 @@ class Connection {
     int splitMessage(string);
 };
 
-int Connection::splitMessage(string str) {
+int Connection::splitMessage(string str)
+{
     message = str;
     string tmp;
     int count = 0;
@@ -71,6 +87,21 @@ int Connection::splitMessage(string str) {
     return count;
 }
 
+template <typename T>
+string NumberToString ( T Number )
+{
+	stringstream ss;
+	ss << Number;
+	return ss.str();
+}
+
+void printUsers(vector<User>& list)
+{
+    for (int i = 0; i < list.size(); i++) {
+        cout << list[i].nickname << " : " << list[i].token << " : " << list[i].status << endl;
+    }
+}
+
 string getFile(const char *filename)
 {
     ifstream in(filename, ios::in | ios::binary);
@@ -87,11 +118,28 @@ string getFile(const char *filename)
     throw(errno);
 }
 
-void sendToFile(string input, string user) {
-    string path = "MESSAGES/" + user;
-    std::ofstream out(path.c_str());
+void sendToFile(string input, string fromUsr, string toUsr)
+{
+    string dir = "mkdir -p ./MESSAGES/" + toUsr;
+    system(dir.c_str());
+    dir = "mkdir -p ./MESSAGES/" + fromUsr;
+    system(dir.c_str());
+    string path = "./MESSAGES/" + toUsr + "/" + fromUsr;
+    ofstream out;
+    out.open(path.c_str(), ofstream::app | fstream::out);
     out << input;
     out.close();
+    path = "./MESSAGES/" + fromUsr + "/" + toUsr;
+    out.open(path.c_str(), ofstream::app | fstream::out);
+    out << input;
+    out.close();
+}
+
+void clearFile(string user) {
+    string path = "./MESSAGES/" + user;
+    ofstream ofs;
+    ofs.open(path.c_str(), ofstream::out | ofstream::trunc);
+    ofs.close();
 }
 
 string generateToken(int length)
@@ -104,91 +152,134 @@ string generateToken(int length)
     return token;
 }
 
-string login(vector<User>& list,string uLogin, string uPass){
+User* login(vector<User>& list,string uLogin, string uPass)
+{
     string token = "";
     for (int i = 0; i < list.size(); i++) {
         if (list[i].nickname.compare(uLogin) == 0) {
             if (list[i].password.compare(uPass) == 0) {
-                token = generateToken(10);
+                token = generateToken(2);
                 list[i].token = token;
+                return &list[i];
             } 
         }
     }
-    return token;
+    return 0;
 }
 
-const string currentDateTime() {
+const string currentDateTime()
+{
     time_t     now = time(0);
     struct tm  tstruct;
     char       buf[80];
     tstruct = *localtime(&now);
-    strftime(buf, sizeof(buf), "%Y-%m-%d.%X", &tstruct);
+    strftime(buf, sizeof(buf), "%d-%m-%Y %X", &tstruct);
     return buf;
 }
 
-string sendMessage(User usr) {
-    string str, msg;
-    stringstream ss;
-    string path = "MESSAGES/" + usr.nickname;
+string prepareMessage(User usr) {
+    string msg;
+    string path = "./MESSAGES/" + usr.nickname;
     msg = getFile(path.c_str());
-    ss << msg.size();
-    str += "01;" + ss.str() + ";" + msg;
-    cout << str << endl;
-    return str;
+    cout << msg << endl;
+    return msg;
 }
 
-string saveMessage(string msg, string usr) {
+void deleteMessage(User usr) {
+    stringstream ss;
+    string path = "./MESSAGES/" + usr.nickname;
+    remove(path.c_str());
+}
+
+int saveMessage(string msg, string fromUsr, string toUsr) {
     string str;
-    str += "<message from=\"" + usr + "\" date=\"" + currentDateTime() + "\">" + msg + "</message>";
-    sendToFile(str, usr);
+    str += "<msg from=\"" + fromUsr + "\" date=\"" + currentDateTime() + "\" size=\"" /*+ NumberToString(msg.length())*/ + "\">" + msg + "</msg>\n";
+    sendToFile(str, fromUsr ,toUsr);
     return str.length();
 }
 
-string sendUsers(vector<User>& list) {
+string sendUsers(vector<User>& list, User usr) {
     string str;
-    stringstream ss;
-    ss << list.size();
-    str += "01;";
-    str += (ss.str() + ";");
+    //stringstream ss;
+    //ss << list.size();
+    //str += (ss.str() + ";");
     for (int i = 0; i < list.size(); i++){
-        str += list[i].nickname + ";" + list[i].status + ";";
+        if (list[i].nickname.compare(usr.nickname)) str += list[i].nickname + ";" + list[i].status + ";";
     }
     return str;
 }
 
-User* findToken(vector<User>& list, string token){
+User* findToken(vector<User>& list, string token)
+{
     for (int i = 0; i < list.size(); i++) {
         if (list[i].token == token) return &list[i];
     }
+    return 0;
 }
 
-bool findUser(vector<User>& list, string nickname){
+bool findUser(vector<User>& list, string nickname)
+{
     for (int i = 0; i < list.size(); i++) {
         if (list[i].nickname == nickname) return true;
     }
     return false;
 }
 
+int updateStatus(vector<User>& list, int lastTime) {
+    int actualTime = time(0);
+    cout << "LastTime: " << lastTime << endl;
+    cout << "ActualTime: " << actualTime << endl;
+    if (actualTime - lastTime > 5) {
+        for (int i = 0; i < list.size(); i++) {
+            if (actualTime - list[i].lastSeen > 5) {
+                list[i].status = "0";
+                cout << "Wyzerowano status dla: " << list[i].nickname << endl;
+            }
+        }
+        return actualTime;
+    }
+    return lastTime;
+}
+
+void listFile(){
+        DIR *pDIR;
+        struct dirent *entry;
+        if( pDIR=opendir("./MESSAGES/") ){
+                while(entry = readdir(pDIR)){
+                        if( strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0 )
+                        cout << entry->d_name << "\n";
+                }
+                closedir(pDIR);
+        }
+}
+void writeMessage(int desc, int& msgSize, int& msgType, string msg){
+    write(desc, (void*)msgSize, sizeof(msgSize));
+    cout << "SERVER: messageSize write: " << msgSize << endl;
+    write(desc, (void*)msgType, sizeof(msgType));
+    cout << "SERVER: messageType write: " << msgType << endl;
+    write(desc, msg.c_str(), msg.length());
+    cout << "SERVER: message write: " << msg << endl;
+}
+
 int main(int argc, char** argv) {
+    listFile();
     srand (time(NULL));
-    int messageSize;
-    char buf[BUFROZ];
-    string recMsg;
+    int lastTime = time(0);
     vector<User> users;
     User usr = User("admin", "1234", "0");
     users.push_back(User("admin", "1234", "0"));
     users.push_back(User("admin2", "1234", "0"));
     users.push_back(User("admin3", "1234", "0"));
     users.push_back(User("admin4", "1234", "0"));
-    Connection conn;
-    for (int i = 0; i < conn.splitMessage(sendUsers(users)); i++){
-       cout << conn.splittedMessage[i] << endl;
-    }
-    cout << sendUsers(users) << endl;
-    sendMessage(usr);
-    cout << generateToken(10) << endl;
-    cout << currentDateTime() << endl;
-
+    saveMessage("test", "admin", "admin2");
+    saveMessage("test2", "admin", "admin2");
+    saveMessage("test3", "admin", "admin2");
+    saveMessage("test4", "admin", "admin2");
+    saveMessage("test5", "admin", "admin2");
+    saveMessage("test6", "admin", "admin2");
+    saveMessage("test7", "admin", "admin2");
+    saveMessage("test8", "admin", "admin2");
+    
     socklen_t slt;
     int x, sfd, cfd, fdmax, fda, rc, i, j, on = 1;
     struct sockaddr_in saddr, caddr;
@@ -235,42 +326,115 @@ int main(int argc, char** argv) {
         }
         for (i = sfd+1; i <= fdmax && fda > 0; i++) {
             if (FD_ISSET(i, &wmask)) {
+                lastTime = updateStatus(users, lastTime);
+                int messageSize, messageType;
+                char buf[BUFROZ];
+                string recMsg, sendMsg;
                 fda -= 1;
-                read(cfd, buf, 4);
-                messageSize = buf;
-                while (j = read(cfd, buf, BUFROZ) > 0) {
-                    recMsg += buf;
-                    cout << recMsg << endl;
-                }
-                cout << recMsg << endl;
+                read(cfd, (void*)&messageSize, sizeof(messageSize));
+                cout << "SERVER: messageSize read: " << messageSize << endl;
+                read(cfd, (void*)&messageType, sizeof(messageType));
+                cout << "SERVER: messageType read: " << messageType << endl;
+                read(cfd, buf, messageSize);
+                buf[messageSize] = '\0';
+                recMsg = buf;
+                cout << "SERVER: message read: " << recMsg << endl;
+                Connection conn;
                 conn.splitMessage(recMsg);
-                if (conn.splittedMessage[0].compare("00") == 0) { //LOGIN 00;login;hasło;
-                    string sendMsg = login(users, conn.splittedMessage[1],conn.splittedMessage[1]);
-                    write(cfd, sendMsg.c_str(), sendMsg.length());
-                }
-                else if (conn.splittedMessage[0].compare("01") == 0) { //SEND USERS 01;token; 
-                    conn.user = findToken(users, conn.splittedMessage[1]);
-                    if (conn.user->token.compare(conn.splittedMessage[1]) == 0 ) {
-                        string sendMsg = sendMessage(*conn.user);
-                        write(cfd, sendMsg.c_str(), sendMsg.length());
+                if ( messageType == 0) { //LOGIN 00;login;hasło;
+                    cout << "SERVER: Choose type 0" << endl;
+                    conn.user = login(users, conn.splittedMessage[0], conn.splittedMessage[1]);
+                    sendMsg = "";
+                    if (conn.user) sendMsg = conn.user->token;
+                    if (sendMsg.compare("") != 0) {
+                        messageSize = sendMsg.length();
+                        writeMessage(cfd, messageSize, messageType, sendMsg);
+                        conn.user->status = "1";
+                        conn.user->lastSeen = time(0);                        
                     }
-                    
-                }
-                else if (conn.splittedMessage[0].compare("02") == 0) { //SEND MESSAGE 02;token; 
-                    conn.user = findToken(users, conn.splittedMessage[1]);
-                    if (conn.user->token.compare(conn.splittedMessage[1]) == 0 ) {
-                        string sendMsg = sendUsers(users);
-                        write(cfd, sendMsg.c_str(), sendMsg.length());
+                    else {
+                        messageType = 5;
+                        sendMsg = "Uzytkownik nierozpoznany";
+                        messageSize = sendMsg.length();
+                        writeMessage(cfd, messageSize, messageType, sendMsg);
                     }
+                    printUsers(users);
+
                 }
-                else if (conn.splittedMessage[0].compare("03") == 0) { //GET MESSAGE 03;token;messageSize;message; 
-                    conn.user = findToken(users, conn.splittedMessage[1]);
-                    if (conn.user->token.compare(conn.splittedMessage[1]) == 0 ) {
-                        int prefixLen = conn.splittedMessage[0].length() + conn.splittedMessage[1].length() + conn.splittedMessage[2].length() + 3;
-                        string saveStr = recMsg.substr(prefixLen, recMsg.length() - (prefixLen+1));
-                        saveMessage(saveStr, conn.user->nickname);
-                        //write(cfd, sendMsg.c_str(), sendMsg.length());
+                else if (messageType == 1) { //SEND USERS 01;token; 
+                    cout << "SERVER: Choose type 1" << endl;
+                    if (findToken(users, recMsg)) {
+                        conn.user = findToken(users, recMsg);
+                        cout << "Auth Login: " << conn.user->nickname << " Token: " << conn.user->token << endl;
+                        if (conn.user) {
+                            sendMsg = sendUsers(users, *conn.user);
+                            messageSize = sendMsg.length();
+                            writeMessage(cfd, messageSize, messageType, sendMsg);
+                            conn.user->status = "1";
+                            conn.user->lastSeen = time(0);
+                        }
                     }
+                    else {
+                        messageType = 5;
+                        sendMsg = "Token nierozpoznany";
+                        messageSize = sendMsg.length();
+                        writeMessage(cfd, messageSize, messageType, sendMsg);;
+                    }
+                    printUsers(users);
+                }
+                
+                
+                else if (messageType == 2) { //SEND MESSAGE 02;token; 
+                    cout << "SERVER: Choose type 2" << endl;
+                    if (findToken(users, recMsg)) {
+                        conn.user = findToken(users, recMsg);
+                        cout << "Auth Login: " << conn.user->nickname << " Token: " << conn.user->token << endl;
+                        if (conn.user) {
+                            sendMsg = prepareMessage(*conn.user);
+                            messageSize = sendMsg.length();
+                            writeMessage(cfd, messageSize, messageType, sendMsg);
+                            conn.user->status = "1";
+                            conn.user->lastSeen = time(0);
+                            //clearFile(conn.user->nickname);
+                        }
+                    }
+                    else {
+                        messageType = 5;
+                        sendMsg = "Token nierozpoznany";
+                        messageSize = sendMsg.length();
+                        writeMessage(cfd, messageSize, messageType, sendMsg);
+                    }
+                    printUsers(users);
+                }
+                else if (messageType == 3) { //GET MESSAGE 03;token;messageSize;message; 
+                    cout << "SERVER: Choose type 3" << endl;
+                    if (findToken(users, conn.splittedMessage[0])) {
+                        conn.user = findToken(users, conn.splittedMessage[0]);
+                        cout << "Auth Login: " << conn.user->nickname << " Token: " << conn.user->token << endl;
+                        if (conn.user && findUser(users, conn.splittedMessage[1])) {
+                            saveMessage(recMsg.substr(conn.splittedMessage[0].length() + conn.splittedMessage[1].length() + 2), conn.user->nickname, conn.splittedMessage[1]);
+                            sendMsg = "true";
+                            messageSize = sendMsg.length();
+                            writeMessage(cfd, messageSize, messageType, sendMsg);
+                            conn.user->status = "1";
+                            conn.user->lastSeen = time(0);
+                        }
+                        else {
+                            messageType = 5;
+                            sendMsg = "Nie ma takiego uzytkownika";
+                            messageSize = sendMsg.length();
+                            writeMessage(cfd, messageSize, messageType, sendMsg);
+                            conn.user->status = "1";
+                            conn.user->lastSeen = time(0);
+                        }
+                    }
+                    else {
+                        messageType = 5;
+                        sendMsg = "Token nierozpoznany";
+                        messageSize = sendMsg.length();
+                        writeMessage(cfd, messageSize, messageType, sendMsg);
+                    }
+                    printUsers(users);
                 }
                 close(i);
                 FD_CLR(i, &mask);
